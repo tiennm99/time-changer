@@ -223,11 +223,12 @@ func CreateCalendarView(initialTime time.Time, onDateSelected func(time.Time)) f
 		// Calculate days from previous month to fill first week
 		daysFromPrevMonth := firstDayWeekday
 		prevMonthTime := firstOfMonth.AddDate(0, -1, 0)
-		daysInPrevMonth := prevMonthTime.Day()
+		// Get the last day of previous month
+		lastDayOfPrevMonth := time.Date(prevMonthTime.Year(), prevMonthTime.Month(), 1, 0, 0, 0, 0, time.Local).AddDate(0, 1, -1).Day()
 
-		// Add days from previous month
-		for i := daysFromPrevMonth - 1; i >= 0; i-- {
-			day := daysInPrevMonth - i
+		// Add days from previous month (starting from the appropriate day)
+		startDay := lastDayOfPrevMonth - daysFromPrevMonth + 1
+		for day := startDay; day <= lastDayOfPrevMonth; day++ {
 			dayTime := time.Date(prevMonthTime.Year(), prevMonthTime.Month(), day, 0, 0, 0, 0, time.Local)
 
 			dayBtn := widget.NewButton(fmt.Sprintf("%d", day), nil)
