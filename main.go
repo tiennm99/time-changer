@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -163,21 +164,43 @@ func generateRange(min, max int) []string {
 func CreateCalendarView(initialTime time.Time, onDateSelected func(time.Time)) fyne.CanvasObject {
 	currentMonth := initialTime
 
-	// Month/Year label
-	monthYearLabel := widget.NewLabel("")
-	monthYearLabel.Alignment = fyne.TextAlignCenter
-	monthYearLabel.TextStyle = fyne.TextStyle{Bold: true}
+	// Month names
+	months := []string{
+		"January", "February", "March", "April", "May", "June",
+		"July", "August", "September", "October", "November", "December",
+	}
 
-	// Navigation buttons
-	prevBtn := widget.NewButton("<", nil)
-	nextBtn := widget.NewButton(">", nil)
+	// Generate years (current year +/- 10)
+	currentYear := time.Now().Year()
+	years := make([]string, 21)
+	for i := 0; i < 21; i++ {
+		years[i] = fmt.Sprintf("%d", currentYear-10+i)
+	}
 
 	// Calendar grid
 	calendarGrid := container.NewGridWithColumns(7)
 
-	updateCalendar := func() {
-		// Update month/year label
-		monthYearLabel.SetText(currentMonth.Format("January 2006"))
+	// Declare variables before creating updateCalendar
+	var updateCalendar func()
+	var prevBtn, nextBtn *widget.Button
+	var monthSelect, yearSelect *widget.Select
+	updatingCalendar := false // Flag to prevent recursive updates
+
+	// Define updateCalendar
+	updateCalendar = func() {
+		if updatingCalendar {
+			return
+		}
+		updatingCalendar = true
+		defer func() { updatingCalendar = false }()
+
+		// Update dropdowns to match current month (only if they exist)
+		if monthSelect != nil {
+			monthSelect.SetSelected(currentMonth.Format("January"))
+		}
+		if yearSelect != nil {
+			yearSelect.SetSelected(fmt.Sprintf("%d", currentMonth.Year()))
+		}
 
 		// Clear grid
 		calendarGrid.Objects = nil
@@ -187,6 +210,7 @@ func CreateCalendarView(initialTime time.Time, onDateSelected func(time.Time)) f
 		for _, day := range days {
 			dayLabel := widget.NewLabel(day)
 			dayLabel.Alignment = fyne.TextAlignCenter
+			dayLabel.TextStyle = fyne.TextStyle{Bold: true}
 			calendarGrid.Add(dayLabel)
 		}
 
@@ -196,12 +220,29 @@ func CreateCalendarView(initialTime time.Time, onDateSelected func(time.Time)) f
 		firstDayWeekday := int(firstOfMonth.Weekday())
 		daysInMonth := lastOfMonth.Day()
 
-		// Add empty cells for days before the first of the month
-		for i := 0; i < firstDayWeekday; i++ {
-			calendarGrid.Add(widget.NewLabel(""))
+		// Calculate days from previous month to fill first week
+		daysFromPrevMonth := firstDayWeekday
+		prevMonthTime := firstOfMonth.AddDate(0, -1, 0)
+		daysInPrevMonth := prevMonthTime.Day()
+
+		// Add days from previous month
+		for i := daysFromPrevMonth - 1; i >= 0; i-- {
+			day := daysInPrevMonth - i
+			dayTime := time.Date(prevMonthTime.Year(), prevMonthTime.Month(), day, 0, 0, 0, 0, time.Local)
+
+			dayBtn := widget.NewButton(fmt.Sprintf("%d", day), nil)
+			dayBtn.Importance = widget.LowImportance
+
+			dayBtn.OnTapped = func() {
+				onDateSelected(dayTime)
+				currentMonth = dayTime
+				updateCalendar()
+			}
+
+			calendarGrid.Add(dayBtn)
 		}
 
-		// Add day buttons
+		// Add days from current month
 		today := time.Now()
 		for day := 1; day <= daysInMonth; day++ {
 			dayTime := time.Date(currentMonth.Year(), currentMonth.Month(), day, 0, 0, 0, 0, time.Local)
@@ -222,29 +263,85 @@ func CreateCalendarView(initialTime time.Time, onDateSelected func(time.Time)) f
 			calendarGrid.Add(dayBtn)
 		}
 
+		// Calculate total cells and add days from next month
+		totalCells := daysFromPrevMonth + daysInMonth
+		remainingCells := (7 - (totalCells % 7)) % 7
+		if remainingCells == 0 && totalCells < 42 {
+			remainingCells = 7
+		}
+
+		// Fill to complete 6 weeks (42 cells)
+		if totalCells+remainingCells < 42 {
+			remainingCells = 42 - totalCells
+		}
+
+		nextMonthTime := firstOfMonth.AddDate(0, 1, 0)
+		for day := 1; day <= remainingCells; day++ {
+			dayTime := time.Date(nextMonthTime.Year(), nextMonthTime.Month(), day, 0, 0, 0, 0, time.Local)
+
+			dayBtn := widget.NewButton(fmt.Sprintf("%d", day), nil)
+			dayBtn.Importance = widget.LowImportance
+
+			dayBtn.OnTapped = func() {
+				onDateSelected(dayTime)
+				currentMonth = dayTime
+				updateCalendar()
+			}
+
+			calendarGrid.Add(dayBtn)
+		}
+
 		calendarGrid.Refresh()
 	}
 
-	// Setup navigation
-	prevBtn.OnTapped = func() {
+	// Month dropdown
+	monthSelect = widget.NewSelect(months, func(value string) {
+		if value != "" {
+			for i, month := range months {
+				if month == value {
+					newMonth := time.Date(currentMonth.Year(), time.Month(i+1), 1, 0, 0, 0, 0, time.Local)
+					currentMonth = newMonth
+					updateCalendar()
+					break
+				}
+			}
+		}
+	})
+	monthSelect.SetSelected(currentMonth.Format("January"))
+
+	// Year dropdown
+	yearSelect = widget.NewSelect(years, func(value string) {
+		if value != "" {
+			year, _ := strconv.Atoi(value)
+			newMonth := time.Date(year, currentMonth.Month(), 1, 0, 0, 0, 0, time.Local)
+			currentMonth = newMonth
+			updateCalendar()
+		}
+	})
+	yearSelect.SetSelected(fmt.Sprintf("%d", currentMonth.Year()))
+
+	// Navigation buttons
+	prevBtn = widget.NewButton("<", func() {
 		currentMonth = currentMonth.AddDate(0, -1, 0)
 		updateCalendar()
-	}
+	})
 
-	nextBtn.OnTapped = func() {
+	nextBtn = widget.NewButton(">", func() {
 		currentMonth = currentMonth.AddDate(0, 1, 0)
 		updateCalendar()
-	}
+	})
 
 	// Initial calendar update
 	updateCalendar()
 
-	// Navigation header
-	navHeader := container.NewBorder(nil, nil, prevBtn, nextBtn, monthYearLabel)
+	// Navigation header with dropdowns
+	monthYearRow := container.NewBorder(nil, nil, prevBtn, nextBtn,
+		container.NewGridWithColumns(2, monthSelect, yearSelect),
+	)
 
 	// Combine everything
 	calendarContainer := container.NewVBox(
-		navHeader,
+		monthYearRow,
 		widget.NewSeparator(),
 		calendarGrid,
 	)
