@@ -74,6 +74,91 @@ func (r *calendarRenderer) Objects() []fyne.CanvasObject {
 
 func (r *calendarRenderer) Destroy() {}
 
+// CreateTimePicker creates a shadcn-style time picker
+func CreateTimePicker(currentTime time.Time, onTimeSelected func(time.Time)) fyne.CanvasObject {
+	// Use pointers to allow modification in closures
+	hours := currentTime.Hour()
+	minutes := currentTime.Minute()
+	seconds := currentTime.Second()
+
+	// Define updateTime before the select widgets
+	updateTime := func() {
+		selectedTime := time.Date(
+			currentTime.Year(),
+			currentTime.Month(),
+			currentTime.Day(),
+			hours,
+			minutes,
+			seconds,
+			0,
+			time.Local,
+		)
+		onTimeSelected(selectedTime)
+	}
+
+	// Create select widgets
+	hourSelect := widget.NewSelect(
+		generateRange(0, 23),
+		func(value string) {
+			if value != "" {
+				var hour int
+				fmt.Sscanf(value, "%d", &hour)
+				hours = hour
+				updateTime()
+			}
+		},
+	)
+	hourSelect.SetSelected(fmt.Sprintf("%02d", hours))
+
+	minuteSelect := widget.NewSelect(
+		generateRange(0, 59),
+		func(value string) {
+			if value != "" {
+				var minute int
+				fmt.Sscanf(value, "%d", &minute)
+				minutes = minute
+				updateTime()
+			}
+		},
+	)
+	minuteSelect.SetSelected(fmt.Sprintf("%02d", minutes))
+
+	secondSelect := widget.NewSelect(
+		generateRange(0, 59),
+		func(value string) {
+			if value != "" {
+				var second int
+				fmt.Sscanf(value, "%d", &second)
+				seconds = second
+				updateTime()
+			}
+		},
+	)
+	secondSelect.SetSelected(fmt.Sprintf("%02d", seconds))
+
+	// Time display with colons
+	timeContainer := container.NewGridWithColumns(5,
+		hourSelect,
+		widget.NewLabel(":"),
+		minuteSelect,
+		widget.NewLabel(":"),
+		secondSelect,
+	)
+
+	return container.NewVBox(
+		widget.NewLabel("Select Time:"),
+		timeContainer,
+	)
+}
+
+func generateRange(min, max int) []string {
+	result := make([]string, max-min+1)
+	for i := range result {
+		result[i] = fmt.Sprintf("%02d", min+i)
+	}
+	return result
+}
+
 // CreateCalendarView creates a calendar view widget
 func CreateCalendarView(initialTime time.Time, onDateSelected func(time.Time)) fyne.CanvasObject {
 	currentMonth := initialTime
@@ -170,7 +255,7 @@ func CreateCalendarView(initialTime time.Time, onDateSelected func(time.Time)) f
 func main() {
 	a := app.New()
 	w := a.NewWindow("Time Changer")
-	w.Resize(fyne.NewSize(500, 500))
+	w.Resize(fyne.NewSize(500, 600))
 
 	// Get current time
 	currentTime := time.Now()
@@ -180,37 +265,6 @@ func main() {
 	selectedDateLabel.TextStyle = fyne.TextStyle{Bold: true}
 
 	selectedDateValue := widget.NewLabel(currentTime.Format("2006-01-02"))
-
-	// Time picker
-	timeLabel := widget.NewLabel("Select Time:")
-	timeLabel.TextStyle = fyne.TextStyle{Bold: true}
-
-	hourEntry := widget.NewEntry()
-	hourEntry.SetPlaceHolder("Hour")
-	hourEntry.SetText(fmt.Sprintf("%02d", currentTime.Hour()))
-
-	minuteEntry := widget.NewEntry()
-	minuteEntry.SetPlaceHolder("Minute")
-	minuteEntry.SetText(fmt.Sprintf("%02d", currentTime.Minute()))
-
-	secondEntry := widget.NewEntry()
-	secondEntry.SetPlaceHolder("Second")
-	secondEntry.SetText(fmt.Sprintf("%02d", currentTime.Second()))
-
-	timeRow := container.NewGridWithColumns(3,
-		container.NewVBox(
-			widget.NewLabel("Hour"),
-			hourEntry,
-		),
-		container.NewVBox(
-			widget.NewLabel("Minute"),
-			minuteEntry,
-		),
-		container.NewVBox(
-			widget.NewLabel("Second"),
-			secondEntry,
-		),
-	)
 
 	// Display label for selected datetime
 	selectedDateTimeLabel := widget.NewLabel(fmt.Sprintf(
@@ -222,37 +276,32 @@ func main() {
 
 	// Update preview function (must be defined before it's used)
 	updatePreview := func() {
-		hours, _ := time.Parse("15", hourEntry.Text)
-		minutes, _ := time.Parse("04", minuteEntry.Text)
-		seconds, _ := time.Parse("05", secondEntry.Text)
-
 		date, _ := time.Parse("2006-01-02", selectedDateValue.Text)
-
 		selectedDateTimeLabel.SetText(fmt.Sprintf(
 			"%04d-%02d-%02d %02d:%02d:%02d",
 			date.Year(), date.Month(), date.Day(),
-			hours.Hour(), minutes.Minute(), seconds.Second(),
+			currentTime.Hour(), currentTime.Minute(), currentTime.Second(),
 		))
 	}
 
 	// Calendar with date selection callback
 	calendar := CreateCalendarView(currentTime, func(selectedDate time.Time) {
 		selectedDateValue.SetText(selectedDate.Format("2006-01-02"))
+		currentTime = selectedDate
 		updatePreview()
 	})
 
-	// Update button
-	updateButton := widget.NewButton("Update Preview", func() {
+	// Time picker with callback
+	timePicker := CreateTimePicker(currentTime, func(selectedTime time.Time) {
+		currentTime = selectedTime
 		updatePreview()
 	})
 
 	// Set current time button
 	setCurrentButton := widget.NewButton("Set to Current Time", func() {
 		now := time.Now()
+		currentTime = now
 		selectedDateValue.SetText(now.Format("2006-01-02"))
-		hourEntry.SetText(fmt.Sprintf("%02d", now.Hour()))
-		minuteEntry.SetText(fmt.Sprintf("%02d", now.Minute()))
-		secondEntry.SetText(fmt.Sprintf("%02d", now.Second()))
 		updatePreview()
 	})
 
@@ -262,10 +311,9 @@ func main() {
 		calendar,
 		selectedDateValue,
 		widget.NewSeparator(),
-		timeLabel,
-		timeRow,
+		timePicker,
 		widget.NewSeparator(),
-		container.NewHBox(updateButton, setCurrentButton),
+		setCurrentButton,
 		widget.NewSeparator(),
 		widget.NewLabel("Preview:"),
 		selectedDateTimeLabel,
